@@ -22,11 +22,15 @@ graph TD
     User([User]) <--> GUI[NSFW Checker GUI]
     User <--> CLI[CLI Interface]
     
-    subgraph Core "Application Core"
-        Main[main.py] --> GUI & CLI
-        GUI & CLI --> FH[file_handler.py]
-        GUI & CLI --> VC[vision_client.py]
-        GUI & CLI --> SC[scorer.py]
+    subgraph Core ["Application Core"]
+        Main[main.py] --> GUI
+        Main --> CLI
+        GUI --> FH[file_handler.py]
+        CLI --> FH
+        GUI --> VC[vision_client.py]
+        CLI --> VC
+        GUI --> SC[scorer.py]
+        CLI --> SC
     end
     
     VC <--> GV[Google Cloud Vision API]
