@@ -1,100 +1,68 @@
-# NFSW自動モザイクツール
+# NSFW自動モザイク ＆ 多機能チェッカー Pro
 
-このツールは、YOLOベースのNSFW検出モデル（EraX-NSFW-V1.0）を用いて、画像内のセンシティブな領域を自動で検出し、モザイク・ぼかし・黒塗りなどの効果を一括で適用します。
+このツールセットは、AI（YOLOv11/v5, ViT, NudeNet等）を用いて、画像・動画内のNSFW領域を自動検出し、モザイク処理や詳細なコンテンツ分析を行うための統合パッケージです。
 
-## 必要なファイル・フォルダ
+## 🌟 主な機能
 
-- mosaic-image.py … 画像用の自動モザイクスクリプト
-- mosaic-video.py … 動画用の自動モザイクスクリプト（mp4/avi/mov対応）
-- nsfw-mosaic-image.bat … 画像用バッチファイル（ダブルクリックで実行）
-- nsfw-mosaic-video.bat … 動画用バッチファイル（ダブルクリックで実行）
-- erax_nsfw_yolo11m.pt … NSFW検出YOLOモデル（[EraX-NSFW-V1.0（HuggingFace）](https://huggingface.co/erax-ai/EraX-NSFW-V1.0) からダウンロード）
-- yolov5/ … YOLOv5のコード一式（[Ultralytics YOLOv5公式](https://github.com/ultralytics/yolov5)）
-- requirements.txt … 必要なPythonパッケージ
-- README.md … この説明書
+- **[NEW] nsfw-checker-pro**: 5つのAIエンジンを搭載した統合型GUI分析ツール。
+- **自動モザイク (画像/動画)**: YOLO検出に基づき、センシティブ領域を自動で隠蔽。
+- **[NEW] 動画音声調整**: `mosaic-video-speek.py` により、モザイク処理後の動画に任意の音声を同期・合成可能。
+- **マルチレイヤー検出**: YOLOに加え、NudeNetによるクロスチェック機能を搭載。
 
-## インストール方法
+## 📂 フォルダ構成と主要ファイル
 
-1. コード一式をクローンします。
-   ```sh
-   git clone https://github.com/igashira0324/mosaic-auto.git
-   cd mosaic-auto
-   ```
-2. モデルファイルをダウンロードします。
-   - [erax_nsfw_yolo11m.pt (HuggingFace)](https://huggingface.co/erax-ai/EraX-NSFW-V1.0) よりダウンロードし、クローンしたディレクトリ直下に配置してください。
-   - yolov5/ ディレクトリはリポジトリに含まれています。
-3. 依存パッケージをインストールします。
-   ```sh
-   pip install -r requirements.txt
-   ```
-   ※ PyTorchのインストールでエラーが出る場合は[PyTorch公式サイト](https://pytorch.org/get-started/locally/)も参照してください。
+- **nsfw-checker-pro/** … 多機能NSFWチェッカー一式（GUI）
+- **mosaic-video-speek.py** … 【強化版】音声調整機能付き動画モザイクスクリプト
+- **mosaic-image.py** / **mosaic-video.py** … 標準モザイクスクリプト
+- **start_all.bat** … 機能を一覧から選んで起動できる統合ランチャー
+- **erax_nsfw_yolo11m.pt** … メインのNSFW検出モデル
+- **yolov5/** … 検出エンジン
+- **output/** … 処理済みファイルの保存先
 
-## 使い方
+## 🚀 使い方
 
-### 画像の自動モザイク処理
+### 1. 統合ランチャーから起動 (`start_all.bat`)
+`start_all.bat` を実行するとメニューが表示されます。目的に合わせて機能を選択してください。
 
-1. `nsfw-mosaic-image.bat` をダブルクリックして実行します。
-2. モザイクパターン選択ダイアログが表示されるので、希望のパターン（モザイク・ぼかし・黒塗り等）を選択します。
-3. 画像フォルダ選択ダイアログが表示されるので、処理したい画像フォルダを選択します。
-4. フォルダ内の画像が自動で処理され、元フォルダ名＋「_mc」の新フォルダに保存されます。
-   - 例: `sample` フォルダを選択 → `sample_mc` フォルダに出力
+### 2. 統合型NSFWチェッカー (`nsfw-checker-pro`)
+1. `nsfw-checker-pro/run.bat` を実行します。
+2. 画像をドラッグ＆ドロップまたは選択して「スキャン開始」をクリックします。
+3. 5つのエンジン（Vision API, WD14, NudeNet等）による詳細な判定結果が表示されます。
 
-### 動画の自動モザイク処理
+### 3. 音声付き動画モザイク (`nsfw-mosaic-video-speek.bat`)
+1. バッチファイルを実行し、動画を選択します。
+2. モザイクパターンを選択後、「音声を追加しますか？」の問いに「はい」を選択。
+3. 合成したい音声ファイル（mp3/wav等）を選択すると、動画の長さに合わせて自動調整（トリミング/速度調整）して保存されます。
 
-1. `nsfw-mosaic-video.bat` をダブルクリックして実行します。
-2. 「動画ファイルを選択」または「フォルダ内の全動画を一括処理」を選択します。
-3. モザイクパターン選択ダイアログが表示されるので、希望のパターンを選択します。
-4. 選択した動画またはフォルダ内の全動画（mp4/avi/mov）が自動で処理され、元ファイル名＋「_mc」の新ファイルとして保存されます。
-   - 例: `sample.mp4` → `sample_mc.mp4` に出力
-   - フォルダ一括処理時は、すべての動画の処理が完了した後に1回だけまとめて完了通知が表示されます。
-   - すでに「_mc.mp4」「_mc.avi」「_mc.mov」で終わるファイルは自動的に処理対象外となります。
-
-## 対応形式
-
-- 画像: jpg, jpeg, png, gif
-- 動画: mp4, avi, mov
-
-## 注意事項（抜粋）
-
-- モデルファイル（`erax_nsfw_yolo11m.pt`）と `yolov5/` フォルダは同じディレクトリに必要です。
-- make_love, nippleクラスは自動処理対象から除外されます。
-- モザイク範囲や強度は `apply_pattern` 関数で調整可能です。
-- 詳細は各スクリプトのコメントやREADME全体を参照してください。
-
-## ライセンス
-
-本ツールはオープンソースです。
-- メインスクリプト・バッチファイル等はAGPL-3.0ライセンスに従います。
-- yolov5/配下のコードは[Ultralytics YOLOv5公式](https://github.com/ultralytics/yolov5)のAGPL-3.0ライセンスです。詳細は[yolov5/LICENSE](yolov5/LICENSE)をご参照ください。
-- erax_nsfw_yolo11m.pt（NSFW検出モデル）は[EraX-NSFW-V1.0（HuggingFace）](https://huggingface.co/erax-ai/EraX-NSFW-V1.0)の利用条件に従ってください。
-
-## 参考リンク
-
-- EraX-NSFW-V1.0モデル: https://huggingface.co/erax-ai/EraX-NSFW-V1.0
-- YOLOv5公式: https://github.com/ultralytics/yolov5
-- Ultralytics YOLOドキュメント: https://docs.ultralytics.com/
-- PyTorch公式: https://pytorch.org/get-started/locally/
-
-# 概要
-
-本ツールは、画像や動画ファイルに対して自動でNSFW領域を検出し、モザイク・ぼかし・黒塗りなどの処理を一括で適用します。
-
-## モザイク処理の流れ（UMLフロー図）
+## 📊 処理フロー
 
 ```mermaid
 flowchart TD
-    A[ユーザーがバッチファイルを実行] --> B[モザイクパターンを選択]
-    B --> C[画像/動画フォルダまたはファイルを選択]
-    C --> D[YOLOモデルでNSFW領域を検出]
-    D --> E[選択したパターンでモザイク等を適用]
-    E --> F[新しいファイル/フォルダに保存]
-    F --> G[完了通知]
+    Start([スタート]) --> Select{機能選択}
+    Select -->|モザイク| M_Input[画像/動画入力]
+    Select -->|分析| A_Input[画像リスト追加]
+    
+    subgraph AI_Detection [AI高度検出エンジン]
+        YOLO[YOLOv11/v5 Tracking]
+        NN[NudeNet v3 Object Detection]
+        ViT[Vision Transformer Contextual Analysis]
+        WD[WD14 Tagger Style Analysis]
+    end
+    
+    M_Input --> YOLO & NN
+    A_Input --> YOLO & NN & ViT & WD
+    
+    YOLO & NN --> Mosaic[モザイク適用 / 音声合成]
+    ViT & WD --> Score[スコアリング / 判定レポート]
+    
+    Mosaic --> M_End([保存: _mc付与])
+    Score --> A_End([CSV/JSON出力])
 ```
 
-### 図解の解説
-- ユーザーはバッチファイルをダブルクリックし、処理したい画像や動画のフォルダ/ファイルを選択します。
-- モザイクやぼかしなどのパターンを選びます。
-- YOLOベースのNSFW検出モデルが画像・動画内のセンシティブ領域を自動で検出します。
-- 選択したパターンで該当領域にモザイク等を適用します。
-- 元のファイル名やフォルダ名に「_mc」を付与した新しいファイル/フォルダとして保存されます。
-- 処理が完了すると通知が表示されます。
+## ⚠️ 注意事項
+
+- **機密情報**: `nsfw-checker-pro/config.py` の `VISION_API_KEY` を自身のキーに設定して使用してください。
+- **ライセンス**: メインスクリプトは AGPL-3.0 です。各モデルの利用規約に従ってください。
+
+---
+Developed by igashira0324

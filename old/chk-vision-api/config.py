@@ -5,7 +5,7 @@ NSFW Image Checker - Configuration
 """
 
 # Google Cloud Vision API キー (ここに貼り付けてください)
-API_KEY = ""
+API_KEY = "AIzaSyCjdyqL8c0P-CuQgUujsFkwCDHzuRLmqPk"
 
 # 対応する画像拡張子
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
