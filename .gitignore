@@ -4,3 +4,15 @@ my-github-batch-project/
 ori/
 *.pyc
 __pycache__/
+
+# 大容量モデルファイル (初回実行時に自動ダウンロード / DOWNLOAD_MODELS.md 参照)
+models/
+*.pt
+*.onnx
+
+# 処理出力・一時ファイル
+output/
+tmp/
+
+# ローカル設定 (既定値から変更した場合のみ手動管理)
+mosaic_config.json

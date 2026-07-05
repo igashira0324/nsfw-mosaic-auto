@@ -1,213 +1,110 @@
+# -*- coding: utf-8 -*-
+"""
+mosaic-image.py — NSFW自動モザイク (画像) 2026-07 刷新版
+
+改善点:
+  * 審査基準準拠モザイク (セル = max(4px, 長辺/100)) — 旧版の固定8/16/32pxはFHD以上で基準不足だった
+  * 検出アンサンブル: EraX V1.0 + Anti-NSFW V1.1 + NudeNet 640m (取りこぼし削減)
+  * TTA (Test-Time Augmentation) + 高解像度画像のタイル推論 (小さな対象の検出向上)
+  * MobileSAM による箱→マスク精密モザイク (過剰な矩形モザイクを回避)
+  * アニメGIF全フレーム処理 / EXIF回転反映 / ICC・透過保持 / WebP・BMP対応
+  * 一時JPEG書き出し廃止 (ndarray直接推論)
+使い方:
+  python mosaic-image.py [画像フォルダ]   # 引数省略時はフォルダ選択ダイアログ
+"""
+
 import os
 import sys
-import cv2
-import numpy as np
-import tkinter as tk
-import tkinter.filedialog as tkFileDialog
-from PIL import Image
-from PIL import ImageFilter
-from ultralytics import YOLO
-# EraX-NSFW-V1.0のクラス名（https://huggingface.co/erax-ai/EraX-NSFW-V1.0?not-for-all-audiences=true）
-names = ['anus', 'make_love', 'nipple', 'penis', 'vagina']
-# モデルの初期化（https://huggingface.co/erax-ai/EraX-NSFW-V1.0/blob/main/erax_nsfw_yolo11m.pt）
-yolo_model_path = os.path.join(os.path.dirname(__file__), 'erax_nsfw_yolo11m.pt')
-model = YOLO(yolo_model_path)
+import time
 
-def ask_mosaic_pattern():
-    import tkinter as tk
-    from tkinter import ttk
-    patterns = ["モザイク小", "モザイク中", "モザイク大", "ぼかし", "黒塗り"]
-    selected = [patterns[0]]
-    cancelled = [False]
-    def on_select(event=None):
-        idx = listbox.curselection()
-        if idx:
-            selected[0] = patterns[idx[0]]
-            root.quit()
-    def on_ok():
-        idx = listbox.curselection()
-        if idx:
-            selected[0] = patterns[idx[0]]
-        root.quit()
-    def on_cancel():
-        cancelled[0] = True
-        root.quit()
-    def on_enter(e):
-        e.widget.config(bg="#00bfff", fg="#fff", relief="raised", bd=3)
-    def on_leave(e):
-        e.widget.config(bg="#23272e", fg="#fff", relief="raised", bd=3)
-    root = tk.Tk()
-    root.title("モザイクパターン選択")
-    root.geometry("420x360")
-    root.configure(bg="#23272e")
-    # タイトル
-    title = tk.Label(root, text="モザイクパターンを選択してください", font=("Segoe UI", 17, "bold"), bg="#23272e", fg="#fff")
-    title.pack(padx=10, pady=18)
-    # リストボックス
-    listbox_frame = tk.Frame(root, bg="#23272e")
-    listbox_frame.pack(padx=24, pady=8, fill=tk.BOTH, expand=True)
-    listbox = tk.Listbox(listbox_frame, height=len(patterns), font=("Segoe UI", 15), bg="#181a20", fg="#fff", selectbackground="#00bfff", selectforeground="#fff", relief="flat", highlightthickness=0, bd=0)
-    for p in patterns:
-        listbox.insert(tk.END, p)
-    listbox.selection_set(0)
-    listbox.pack(fill=tk.BOTH, expand=True)
-    listbox.bind('<Double-1>', on_select)
-    # ボタン
-    btn_frame = tk.Frame(root, bg="#23272e")
-    btn_frame.pack(pady=18)
-    btn_ok = tk.Button(btn_frame, text="OK", font=("Segoe UI", 14), width=10, height=2, bg="#23272e", fg="#fff", relief="raised", bd=3, activebackground="#00bfff", activeforeground="#fff", command=on_ok)
-    btn_ok.pack(side=tk.LEFT, padx=16)
-    btn_ok.bind("<Enter>", on_enter)
-    btn_ok.bind("<Leave>", on_leave)
-    btn_cancel = tk.Button(btn_frame, text="キャンセル", font=("Segoe UI", 14), width=10, height=2, bg="#23272e", fg="#fff", relief="raised", bd=3, activebackground="#ff5555", activeforeground="#fff", command=on_cancel)
-    btn_cancel.pack(side=tk.LEFT, padx=16)
-    btn_cancel.bind("<Enter>", on_enter)
-    btn_cancel.bind("<Leave>", on_leave)
-    root.mainloop()
-    root.destroy()
-    if cancelled[0]:
-        return None
-    return selected[0]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
-def apply_pattern(region, pattern):
-    w, h = region.size
-    if pattern == "モザイク大":
-        small = region.resize((max(1, w // 32), max(1, h // 32)), Image.Resampling.BICUBIC)
-        return small.resize((w, h), Image.Resampling.NEAREST)
-    elif pattern == "モザイク中":
-        small = region.resize((max(1, w // 16), max(1, h // 16)), Image.Resampling.BICUBIC)
-        return small.resize((w, h), Image.Resampling.NEAREST)
-    elif pattern == "モザイク小":
-        small = region.resize((max(1, w // 8), max(1, h // 8)), Image.Resampling.BICUBIC)
-        return small.resize((w, h), Image.Resampling.NEAREST)
-    elif pattern == "ぼかし":
-        return region.filter(ImageFilter.GaussianBlur(radius=8))
-    elif pattern == "黒塗り":
-        return Image.new("RGB", (w, h), (0, 0, 0))
-    else:
-        return region
+import mosaic_core as mc
+import mosaic_gui as mg
 
-def auto_apply_mosaic(image, pattern):
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-        image.save(tmp.name)
-        tmp_path = tmp.name
-    # オブジェクト検出モデルを実行し、結果を取得
-    # conf: 信頼度閾値, iou: IoU閾値
-    results = model(tmp_path, conf=0.15, iou=0.3)
-    # 処理対象の画像サイズを出力
-    print(f"画像サイズ: {image.width}x{image.height}")
-    for result in results:
-        for box in result.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            conf = float(box.conf[0])
-            cls_idx = int(box.cls[0])
-            cls_name = names[cls_idx] if cls_idx < len(names) else ""
-            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-            print(f"検出: class={cls_name}, conf={conf:.2f}, box=(x1={x1}, y1={y1}, x2={x2}, y2={y2}), center=({cx}, {cy})")
-            if cls_name in ["make_love", "nipple"]:
-                continue
-            w, h = x2 - x1, y2 - y1
-            if w < 10 or h < 10:
-                continue
-            # --- モザイクの範囲を一回り小さく ---
-            shrink_ratio_w = 0.75  # ヨコの範囲を75%ずつ内側に
-            shrink_ratio_h = 0.45  # タテの範囲を45%ずつ内側に
-            dx = int(w * shrink_ratio_w / 2)
-            dy = int(h * shrink_ratio_h / 2)
-            sx1 = x1 + dx
-            sy1 = y1 + dy
-            sx2 = x2 - dx
-            sy2 = y2 - dy
-            if sx2 <= sx1 or sy2 <= sy1:
-                continue
-            region = image.crop((sx1, sy1, sx2, sy2))
-            mosaic = apply_pattern(region, pattern)
-            image.paste(mosaic, (sx1, sy1, sx2, sy2))
-    os.remove(tmp_path)
-    return image
 
-def main():
-    import tkinter.messagebox as tkMessageBox
-    from tkinter import ttk
-    # 引数がなければGUIでフォルダ選択
+def main() -> None:
+    # --- 入力フォルダ ---
     if len(sys.argv) == 1:
-        root = tk.Tk()
-        root.withdraw()
-        folder = tkFileDialog.askdirectory(title="画像フォルダを選択してください")
-        root.destroy()
+        folder = mg.pick_folder("画像フォルダを選択してください")
         if not folder:
             print("フォルダが選択されませんでした。処理を中止します。")
             sys.exit(1)
     elif len(sys.argv) == 2:
         folder = sys.argv[1]
     else:
-        print("使い方: python mosaic-auto.py <画像フォルダ>")
+        print("使い方: python mosaic-image.py <画像フォルダ>")
         sys.exit(1)
+
     if not os.path.isdir(folder):
         print("指定されたパスはフォルダではありません")
         sys.exit(1)
-    out_folder = folder + "_mc"
-    exts = (".jpg", ".jpeg", ".png", ".gif")
-    files = [f for f in sorted(os.listdir(folder)) if f.lower().endswith(exts)]
+
+    files = [f for f in sorted(os.listdir(folder)) if f.lower().endswith(mc.IMAGE_EXTS)]
     if not files:
-        print("画像ファイルが見つかりません")
+        mg.show_info("画像なし", "対応画像ファイルが見つかりません。\n対応形式: " + " ".join(mc.IMAGE_EXTS))
         sys.exit(1)
-    pattern = ask_mosaic_pattern()
+
+    # --- パターン選択 ---
+    pattern = mg.ask_mosaic_pattern()
     if pattern is None:
         print("キャンセルされました。処理を中止します。")
         return
-    out_folder_created = False
 
-    # --- 進捗バー用ウィンドウ ---
-    progress_root = tk.Tk()
-    progress_root.title("モザイク処理進捗")
-    progress_root.geometry("440x190")
-    progress_root.configure(bg="#23272e")
-    style = ttk.Style(progress_root)
-    style.theme_use("clam")
-    style.configure("TLabel", background="#23272e", foreground="#fff", font=("Segoe UI", 14))
-    style.configure("TFrame", background="#23272e")
-    # かっこいいグラデーション風プログレスバー
-    style.layout("Cool.Horizontal.TProgressbar",
-        [('Horizontal.Progressbar.trough', {'children': [
-            ('Horizontal.Progressbar.pbar', {'side': 'left', 'sticky': 'ns'})], 'sticky': 'nswe'})])
-    style.configure("Cool.Horizontal.TProgressbar",
-        troughcolor="#181a20", bordercolor="#23272e", background="#00bfff", lightcolor="#00bfff", darkcolor="#005f8f", thickness=22, borderwidth=2, relief="flat")
-    # タイトル
-    tk.Label(progress_root, text="画像を処理中...", font=("Segoe UI", 15, "bold"), bg="#23272e", fg="#fff").pack(pady=12)
-    progress_var = tk.DoubleVar()
-    progress = ttk.Progressbar(progress_root, variable=progress_var, maximum=len(files), length=380, style="Cool.Horizontal.TProgressbar")
-    progress.pack(pady=8)
-    status_label = tk.Label(progress_root, text="", font=("Segoe UI", 12), bg="#23272e", fg="#fff")
-    status_label.pack(pady=2)
-    percent_label = tk.Label(progress_root, text="", font=("Segoe UI", 12), bg="#23272e", fg="#fff")
-    percent_label.pack(pady=2)
-    progress_root.update()
+    # --- 検出エンジン初期化 ---
+    cfg = mc.load_config()
+    print("[INFO] 検出エンジンを初期化しています...")
+    try:
+        detector = mc.NsfwDetector(cfg)
+    except Exception as e:
+        mg.show_error("エラー", f"検出モデルの読み込みに失敗しました。\n{e}")
+        return
+
+    out_folder = folder + "_mc"
+    os.makedirs(out_folder, exist_ok=True)
+
+    pw = mg.ProgressWindow("画像モザイク処理")
+    t0 = time.time()
+    n_done = 0
+    n_regions_total = 0
+    errors = []
 
     for idx, fname in enumerate(files, 1):
+        if pw.cancelled:
+            break
+        pw.update("画像モザイク処理", idx - 1, len(files), extra=fname)
         in_path = os.path.join(folder, fname)
         out_path = os.path.join(out_folder, fname)
-        status_label.config(text=f"{fname} ({idx}/{len(files)})")
-        percent = int(idx / len(files) * 100)
-        percent_label.config(text=f"進捗: {percent}%")
-        progress_var.set(idx-1)
-        progress_root.update()
         try:
-            img = Image.open(in_path).convert("RGB")
-            img = auto_apply_mosaic(img, pattern)
-            if not out_folder_created:
-                os.makedirs(out_folder, exist_ok=True)
-                out_folder_created = True
-            img.save(out_path)
+            n = mc.process_image_file(in_path, out_path, pattern, cfg, detector)
+            n_regions_total += n
+            n_done += 1
+            print(f"[{idx}/{len(files)}] {fname}: {n}領域")
         except Exception as e:
-            print(f"エラー: {fname}: {e}")
-    progress_var.set(len(files))
-    status_label.config(text="完了")
-    percent_label.config(text="進捗: 100%")
-    progress_root.update()
-    tkMessageBox.showinfo("完了", "全ての画像の処理が完了しました。", parent=progress_root)
-    progress_root.destroy()
+            errors.append(f"{fname}: {e}")
+            print(f"[ERROR] {fname}: {e}")
+        pw.update("画像モザイク処理", idx, len(files), extra=fname)
+
+    cancelled = pw.cancelled
+    pw.close()
+
+    elapsed = time.time() - t0
+    msg = (f"処理完了: {n_done}/{len(files)} ファイル\n"
+           f"モザイク適用領域: {n_regions_total}箇所\n"
+           f"所要時間: {elapsed:.1f}秒\n"
+           f"出力先: {out_folder}")
+    if cancelled:
+        msg = "キャンセルされました。\n" + msg
+    if errors:
+        msg += "\n\nエラー:\n" + "\n".join(errors[:10])
+        if len(errors) > 10:
+            msg += f"\n...他{len(errors) - 10}件"
+    mg.show_info("完了", msg)
+
 
 if __name__ == "__main__":
     main()

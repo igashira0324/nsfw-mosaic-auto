@@ -8,4 +8,5 @@ if exist venv\Scripts\activate.bat (
     call venv\Scripts\activate.bat
 )
 
-python mosaic-video.py %*
+python download_models.py
+pause

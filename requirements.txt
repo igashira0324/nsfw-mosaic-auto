@@ -1,6 +1,12 @@
-opencv-python
-numpy
-Pillow
-ultralytics
-tkinter
-torch
+# NSFW自動モザイク 依存パッケージ
+# インストール: venv\Scripts\python.exe -m pip install -r requirements.txt
+# (torch はCUDA版を推奨: https://pytorch.org/get-started/locally/ 参照)
+ultralytics>=8.4.84
+torch>=2.5.1
+opencv-python>=4.10
+numpy>=1.26
+Pillow>=10.0
+nudenet>=3.4.2
+onnxruntime-gpu>=1.20 ; platform_system == "Windows"
+ffmpeg-python>=0.2.0
+# tkinter は Python 標準添付 (pip不要)

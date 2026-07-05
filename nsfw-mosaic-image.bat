@@ -1,4 +1,11 @@
 @echo off
-REM 画像用自動モザイクスクリプト
-python mosaic-image.py
-if exist mosaic-auto.bat del mosaic-auto.bat
+chcp 65001 > nul
+setlocal
+cd /d "%~dp0"
+
+REM Python仮想環境があれば有効化
+if exist venv\Scripts\activate.bat (
+    call venv\Scripts\activate.bat
+)
+
+python mosaic-image.py %*

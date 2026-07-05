@@ -1,0 +1,18 @@
+# NSFW自動モザイク用 BoT-SORT設定
+# 標準設定との違い:
+#  - new_track_thresh を検出confまで引き下げ: 低confidence検出も即トラック化
+#    (未トラック検出の取りこぼし=モザイク漏れを防ぐ。従来の二重推論Layer2を代替)
+#  - track_buffer 60: オクルージョン/一時的な検出落ちでもトラックを保持し再関連付け
+#  - gmc_method sparseOptFlow: カメラ移動(手持ち撮影等)をグローバル動き補償で吸収
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.05
+new_track_thresh: 0.10
+track_buffer: 60
+match_thresh: 0.8
+fuse_score: True
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto
