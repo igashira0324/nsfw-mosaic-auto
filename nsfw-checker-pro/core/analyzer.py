@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from engines.nudenet_engine import NudeNetEngine
 from engines.wd14_engine import WD14Engine
+from engines.photo_tagger_engine import PhotoTaggerEngine
 from engines.anime_engine import AnimeEngine
 from engines.vision_engine import VisionEngine
 from engines.vit_engine import ViTNSFWEngine
@@ -48,6 +49,11 @@ class MultiEngineAnalyzer:
             self.engines['wd14'] = WD14Engine()
         except Exception as e:
             print(f"[ERROR] WD14 init failed: {e}")
+
+        try:
+            self.engines['photo_tagger'] = PhotoTaggerEngine()
+        except Exception as e:
+            print(f"[ERROR] PhotoTagger init failed: {e}")
 
         try:
             self.engines['anime_cls'] = AnimeEngine()

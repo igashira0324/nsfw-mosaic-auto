@@ -39,6 +39,15 @@
 - 進捗ウィンドウに **ETA表示 + キャンセルボタン**
 - 設定ファイル `mosaic_config.json`（初回起動時に自動生成）で全パラメータ調整可能
 
+### nsfw-checker-pro（多機能チェッカー）も同時刷新
+- **[NEW] Photo Tagger エンジン追加**: `deepghs/idolsankaku-eva02-large-tagger-v1`。WD14がDanbooru学習でアニメ調に偏る弱点を補完し、実写（グラビア/アイドル系）のタグ・レーティング精度を強化
+- **ViT NSFW判定を刷新**: Falconsai(2023, 二値)→ `Freepik/nsfw_image_detector`(2025, MIT)。neutral/low/medium/highの4段階重大度を確率加重で連続スコア化
+- **WD14公式レーティング(rating)ヘッドを活用**: 旧版は捨てていた general/sensitive/questionable/explicit を抽出し、explicit高確度で強制格上げ
+- **NudeNet 640m自動選択**: モザイク側と共有の高精度モデルを検出（`../models/nudenet_640m.onnx`）
+- **LFM2.5-VLのプロンプトエコー混入バグを修正**: 生成トークンのみデコードするよう変更（旧版はプロンプト内のJSONテンプレート文字列を回答として誤パースすることがあった）。生成パラメータもタスク別に分離（安全性グレーディングは公式カード推奨値、SNS創作文生成は既存チューニングを維持）
+- **コンセンサススコアのバイアス修正**: 「安全」判定のエンジンがスコア0を返すと投票から除外される旧ロジックを修正し、正常動作した全エンジンが必ず投票に参加するよう変更
+- **ViT/Anime判定をGPU実行・BGR/RGBチャネル修正**
+
 ## 📂 フォルダ構成と主要ファイル
 
 - **mosaic_core.py** … 【新】共通コアエンジン（検出/タイムライン/モザイク/エンコード）
@@ -112,7 +121,7 @@ flowchart TD
     Verify -->|漏れあり| Apply
     Verify -->|OK| M_End([保存: _mc付与])
 
-    A_Input --> Score[5エンジン スコアリング]
+    A_Input --> Score[7エンジン スコアリング]
     Score --> A_End([CSV/JSON出力])
 ```
 

@@ -14,7 +14,10 @@ try:
     import torch
     from transformers import AutoProcessor, AutoModelForImageTextToText
     HAS_TRANSFORMERS = True
-except ImportError:
+except ImportError as e:
+    import traceback
+    print(f"[DEBUG] ImportError details: {e}")
+    traceback.print_exc()
     HAS_TRANSFORMERS = False
 
 
@@ -59,19 +62,29 @@ class LFMEngine:
                 self.dtype = torch.float32
                 print(f"[INFO] {self.DISPLAY_NAME}: Using CPU with float32")
 
-            self.processor = AutoProcessor.from_pretrained(self.MODEL_ID, trust_remote_code=True)
+            # device_map="auto" を使いつつ、低リソースロードを試みる
             self.model = AutoModelForImageTextToText.from_pretrained(
                 self.MODEL_ID,
                 device_map="auto",
                 torch_dtype=self.dtype,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True
+            )
+
+            # Processor のロードを追加
+            self.processor = AutoProcessor.from_pretrained(
+                self.MODEL_ID,
                 trust_remote_code=True
             )
+            
             self.available = True
             print(f"[OK] {self.DISPLAY_NAME} initialized.")
         except Exception as e:
+            import traceback
             print(f"[WARN] Failed to initialize {self.DISPLAY_NAME}: {e}")
+            traceback.print_exc()
 
-    def analyze(self, image_array: np.ndarray = None, image_path: Path = None) -> Dict[str, Any]:
+    def analyze(self, image_array: np.ndarray = None, image_path: Path = None, custom_prompt: str = None) -> Dict[str, Any]:
         """
         Analyze image using LFM2.5-VL vision-language model.
         
@@ -102,12 +115,13 @@ class LFMEngine:
                 return {'error': 'No image data', 'engine': self.NAME}
 
             # Build conversation
+            prompt_to_use = custom_prompt if custom_prompt else NSFW_ANALYSIS_PROMPT
             conversation = [
                 {
                     "role": "user",
                     "content": [
                         {"type": "image", "image": pil_image},
-                        {"type": "text", "text": NSFW_ANALYSIS_PROMPT},
+                        {"type": "text", "text": prompt_to_use},
                     ],
                 },
             ]
@@ -121,24 +135,57 @@ class LFMEngine:
                 tokenize=True,
             ).to(self.model.device)
 
+            # 生成パラメータ: 安全性グレーディング(構造化JSON)は公式モデルカード推奨値
+            # (temperature=0.1, min_p=0.15, repetition_penalty=1.05) を使用。
+            # repetition_penalty を高くするとJSON構造トークン("・:・,)まで抑制され
+            # フォーマット破綻の原因になるため低めに保つ。
+            # SNS創作文生成 (custom_prompt) は文末の単調な繰り返し防止が要件のため
+            # repetition_penalty=1.2 の既存チューニングを維持する。
+            if custom_prompt:
+                gen_kwargs = dict(temperature=0.1, do_sample=True, repetition_penalty=1.2)
+            else:
+                gen_kwargs = dict(temperature=0.1, min_p=0.15, do_sample=True, repetition_penalty=1.05)
+
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=200,
-                    temperature=0.1,
-                    do_sample=True,
+                    max_new_tokens=512,
+                    **gen_kwargs,
                 )
 
-            raw_response = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
+            # 重要: 生成トークンのみをデコードする。
+            # 旧実装は入力プロンプトごとデコードしていたため、プロンプト内の
+            # JSONテンプレートや "UNSAFE" 等のガイド語を回答として誤パースしていた。
+            input_len = inputs["input_ids"].shape[1]
+            gen_only = outputs[:, input_len:]
+            raw_response = self.processor.batch_decode(gen_only, skip_special_tokens=True)[0].strip()
 
             # Parse the response
-            result = self._parse_response(raw_response)
+            if custom_prompt:
+                parsed = self._extract_json(raw_response)
+                result = parsed if parsed is not None else {'raw_text': raw_response}
+            else:
+                result = self._parse_response(raw_response)
+
             result['raw_response'] = raw_response
             result['engine'] = self.NAME
             return result
 
         except Exception as e:
             return {'error': str(e), 'engine': self.NAME}
+
+    @staticmethod
+    def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+        """テキスト中のJSONブロックを探し、最初に正しくパースできたものを返す。"""
+        import json
+        for m in re.finditer(r'\{.*?\}', text, re.DOTALL):
+            try:
+                data = json.loads(m.group())
+                if isinstance(data, dict):
+                    return data
+            except (json.JSONDecodeError, ValueError):
+                continue
+        return None
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """Parse the LLM response to extract structured safety data."""
@@ -149,21 +196,17 @@ class LFMEngine:
             'detected_elements': []
         }
 
-        try:
-            # Try to extract JSON from response
-            import json
-            # Find JSON block in response
-            json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
+        data = self._extract_json(response)
+        if data is not None and ('safety_level' in data or 'nsfw_score' in data):
+            try:
                 return {
-                    'safety_level': data.get('safety_level', 'UNKNOWN'),
+                    'safety_level': str(data.get('safety_level', 'UNKNOWN')),
                     'nsfw_score': float(data.get('nsfw_score', 0.0)),
-                    'description': data.get('description', ''),
-                    'detected_elements': data.get('detected_elements', [])
+                    'description': str(data.get('description', '')),
+                    'detected_elements': list(data.get('detected_elements', []) or [])
                 }
-        except (json.JSONDecodeError, ValueError):
-            pass
+            except (TypeError, ValueError):
+                pass
 
         # Fallback: keyword-based parsing
         response_lower = response.lower()

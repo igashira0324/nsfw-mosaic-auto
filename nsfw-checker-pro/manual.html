@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>nsfw-checker-pro 取扱説明書</title>
 <script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
     mermaid.initialize({ startOnLoad: true, theme: 'dark' });
 </script>
 <style>
@@ -209,26 +209,38 @@
 <section class="reveal">
     <h2>🚀 アプリケーションの概要</h2>
     <p>
-        <code>nsfw-checker-pro</code> は、5つの独立したAIエンジンを組み合わせた、最高峰の画像分析ツールです。
-        従来のツールを統合し、HuggingFaceの最新ViTモデルを追加することで、圧倒的な精度と信頼性を実現しました。
+        <code>nsfw-checker-pro</code> は、7つの独立したAIエンジンを組み合わせた、最高峰の画像分析ツールです。
+        2026-07の刷新で実写タガーと4段階重大度分類器を追加し、圧倒的な精度と信頼性を実現しました。
     </p>
 
     <div class="card-grid">
         <div class="card">
-            <h3>NudeNet v3</h3>
-            <p>露出部位の物体検出に特化したエンジン。わいせつな部位を正確に特定し、座標情報を取得します。</p>
+            <h3>NudeNet v3 (640m)</h3>
+            <p>露出部位の物体検出に特化したエンジン。わいせつな部位を正確に特定し、座標情報を取得します。高精度640mモデルを自動選択。</p>
         </div>
         <div class="card">
             <h3>WD14-Tagger V3</h3>
-            <p>1万以上のタグを認識。服装（下着・水着等）やシチュエーションを詳細に分析します。</p>
+            <p>1万以上のタグを認識。服装（下着・水着等）やシチュエーションを詳細に分析。公式レーティング(general/sensitive/questionable/explicit)も活用。</p>
         </div>
         <div class="card">
-            <h3>NSFW ViT</h3>
-            <p>最新の Vision Transformer モデル。高度な画像文脈理解により、誤検知を最小限に抑えます。</p>
+            <h3>[NEW] Photo Tagger</h3>
+            <p>idolsankaku-eva02タガー。WD14がアニメ調に偏るのを補完し、実写(グラビア/アイドル系)のタグ・レーティング精度を強化します。</p>
+        </div>
+        <div class="card">
+            <h3>[刷新] ViT NSFW (Freepik EVA02)</h3>
+            <p>neutral/low/medium/highの4段階重大度分類。旧Falconsaiの二値判定より高精度・高粒度です。</p>
+        </div>
+        <div class="card">
+            <h3>Anime/Real Classifier</h3>
+            <p>アニメ調か実写かを判定し、スタイル別のスコアリング調整に利用します。</p>
+        </div>
+        <div class="card">
+            <h3>LFM2.5-VL</h3>
+            <p>ローカルVision-Language Modelによる文脈理解型の安全性判定。SNS投稿文の自動生成にも活用。</p>
         </div>
         <div class="card">
             <h3>Vision API</h3>
-            <p>Google Cloud の SafeSearch を統合。クラウドとローカルのハイブリッド判定が可能です。</p>
+            <p>Google Cloud の SafeSearch を統合。クラウドとローカルのハイブリッド判定が可能です（任意/APIキー要）。</p>
         </div>
     </div>
 </section>
@@ -244,38 +256,40 @@
 classDiagram
     class MainApp {
         <<GUI>>
-        +file_items
-        +results
-        +_start_analysis()
-        +_update_preview()
+        +List file_items
+        +List results
+        -start_analysis()
+        -update_preview()
     }
     class MultiEngineAnalyzer {
         <<Core>>
-        +engines: Dict
+        +Dict engines
         +analyze_image(path)
     }
     class Scorer {
         <<Core>>
         +score(results)
-        +_determine_verdict()
+        -determine_verdict()
     }
     class BaseEngine {
         <<Interface>>
-        +available: bool
+        +bool available
         +analyze(image_array)
     }
     
-    MainApp --> MultiEngineAnalyzer : 実行要求
-    MainApp --> Scorer : スコア計算
-    MultiEngineAnalyzer o-- BaseEngine : 5つのエンジンを保持
-    
+    MainApp --> MultiEngineAnalyzer: 実行要求
+    MainApp --> Scorer: スコア計算
+    MultiEngineAnalyzer o-- BaseEngine: 7つのエンジンを保持
+
     BaseEngine <|-- NudeNetEngine
     BaseEngine <|-- WD14Engine
+    WD14Engine <|-- PhotoTaggerEngine
     BaseEngine <|-- AnimeEngine
     BaseEngine <|-- VisionEngine
     BaseEngine <|-- ViTNSFWEngine
+    BaseEngine <|-- LFMEngine
 
-    Scorer ..> ScoringResult : 生成
+    Scorer ..> ScoringResult: 生成
         </div>
     </div>
 </section>

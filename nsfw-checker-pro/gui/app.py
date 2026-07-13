@@ -211,7 +211,7 @@ class NSFWCheckerApp:
         tree_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         columns = ('verdict', 'score', 'style', 'gender', 'art_style',
-                   'nn_score', 'wd14_score', 'vision_score', 'vit_score', 'lfm_score', 'labels')
+                   'nn_score', 'wd14_score', 'photo_score', 'vision_score', 'vit_score', 'lfm_score', 'labels')
         self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', selectmode='browse')
 
         # Style
@@ -230,6 +230,7 @@ class NSFWCheckerApp:
         self.tree.heading('art_style', text='画風')
         self.tree.heading('nn_score', text='NudeNet')
         self.tree.heading('wd14_score', text='WD14')
+        self.tree.heading('photo_score', text='実写Tag')
         self.tree.heading('vision_score', text='Vision')
         self.tree.heading('vit_score', text='ViT')
         self.tree.heading('lfm_score', text='LFM')
@@ -242,6 +243,7 @@ class NSFWCheckerApp:
         self.tree.column('art_style', width=60, anchor='center')
         self.tree.column('nn_score', width=70, anchor='center')
         self.tree.column('wd14_score', width=65, anchor='center')
+        self.tree.column('photo_score', width=65, anchor='center')
         self.tree.column('vision_score', width=65, anchor='center')
         self.tree.column('vit_score', width=60, anchor='center')
         self.tree.column('lfm_score', width=60, anchor='center')
@@ -394,6 +396,7 @@ class NSFWCheckerApp:
             result.image_style,
             f"{result.engine_scores.get('nudenet', 0):.1f}",
             f"{result.engine_scores.get('wd14', 0):.1f}",
+            f"{result.engine_scores.get('photo_tagger', 0):.1f}",
             f"{result.engine_scores.get('vision_api', 0):.1f}",
             f"{result.engine_scores.get('vit_nsfw', 0):.1f}",
             f"{result.engine_scores.get('lfm_vl', 0):.1f}",
@@ -425,9 +428,12 @@ class NSFWCheckerApp:
             'engine_scores': result.engine_scores,
             'labels_summary': result.labels_summary,
             'all_tags': result.all_tags,
+            'wd14_rating': result.wd14_rating,
+            'photo_tagger_rating': result.photo_tagger_rating,
             'safe_search': result.safe_search,
             'vit_label': result.vit_label,
             'vit_nsfw_score': result.vit_nsfw_score,
+            'vit_severity': result.vit_severity,
             'lfm_safety_level': result.lfm_safety_level,
             'lfm_nsfw_score': result.lfm_nsfw_score,
             'lfm_description': result.lfm_description
@@ -506,6 +512,7 @@ class NSFWCheckerApp:
             name_map = {
                 'nudenet': 'NudeNet v3',
                 'wd14': 'WD14-Tagger V3',
+                'photo_tagger': 'Photo Tagger',
                 'vision_api': 'Vision API',
                 'vit_nsfw': 'ViT NSFW',
                 'lfm_vl': 'LFM2.5-VL',
@@ -521,14 +528,24 @@ class NSFWCheckerApp:
             lines.append(f"")
 
         if result.vit_label:
-            lines.append(f"─── ViT NSFW ───")
+            lines.append(f"─── ViT NSFW (4段階) ───")
             lines.append(f"  Label : {result.vit_label}")
             lines.append(f"  Score : {result.vit_nsfw_score:.4f}")
+            for k in ('neutral', 'low', 'medium', 'high'):
+                if k in result.vit_severity:
+                    lines.append(f"    {k:8s}: {result.vit_severity[k]:.4f}")
             lines.append(f"")
 
         lines.append(f"─── NudeNet 検出ラベル ───")
         lines.append(f"  {result.labels_summary}")
         lines.append(f"")
+
+        if result.wd14_rating:
+            lines.append(f"─── WD14 レーティング ───")
+            for k in ('general', 'sensitive', 'questionable', 'explicit'):
+                if k in result.wd14_rating:
+                    lines.append(f"  {k:12s}: {result.wd14_rating[k]:.4f}")
+            lines.append(f"")
 
         if result.all_tags:
             lines.append(f"─── WD14 タグ (Top) ───")

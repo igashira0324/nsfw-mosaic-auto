@@ -16,7 +16,8 @@ def export_csv(results: List[Dict[str, Any]], output_path: str):
     """Export results to CSV file."""
     fieldnames = [
         'ファイル', '判定', 'スコア', 'スタイル', '性別', '画風',
-        'NudeNet', 'WD14', 'VisionAPI', 'ViT', '詳細ラベル', 'タグ'
+        'NudeNet', 'WD14', 'WD14-explicit', 'PhotoTagger', 'VisionAPI', 'ViT', 'LFM',
+        '詳細ラベル', 'タグ'
     ]
     with open(output_path, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -31,8 +32,11 @@ def export_csv(results: List[Dict[str, Any]], output_path: str):
                 '画風': r.get('image_style', ''),
                 'NudeNet': r.get('engine_scores', {}).get('nudenet', 0),
                 'WD14': r.get('engine_scores', {}).get('wd14', 0),
+                'WD14-explicit': round(r.get('wd14_rating', {}).get('explicit', 0), 4),
+                'PhotoTagger': r.get('engine_scores', {}).get('photo_tagger', 0),
                 'VisionAPI': r.get('engine_scores', {}).get('vision_api', 0),
                 'ViT': r.get('engine_scores', {}).get('vit_nsfw', 0),
+                'LFM': r.get('engine_scores', {}).get('lfm_vl', 0),
                 '詳細ラベル': r.get('labels_summary', ''),
                 'タグ': r.get('all_tags', '')
             })
@@ -74,8 +78,10 @@ def export_html(results: List[Dict[str, Any]], output_path: str):
             <td>{r.get('image_style', '')}</td>
             <td class="score">{r.get('engine_scores', {}).get('nudenet', 0):.1f}</td>
             <td class="score">{r.get('engine_scores', {}).get('wd14', 0):.1f}</td>
+            <td class="score">{r.get('engine_scores', {}).get('photo_tagger', 0):.1f}</td>
             <td class="score">{r.get('engine_scores', {}).get('vision_api', 0):.1f}</td>
             <td class="score">{r.get('engine_scores', {}).get('vit_nsfw', 0):.1f}</td>
+            <td class="score">{r.get('engine_scores', {}).get('lfm_vl', 0):.1f}</td>
             <td class="tags">{r.get('labels_summary', '')}</td>
         </tr>"""
 
@@ -120,7 +126,7 @@ tr:hover {{ background: #1c2128; }}
 <table>
 <thead><tr>
 <th>ファイル</th><th>判定</th><th>スコア</th><th>スタイル</th><th>性別</th><th>画風</th>
-<th>NudeNet</th><th>WD14</th><th>Vision</th><th>ViT</th><th>詳細</th>
+<th>NudeNet</th><th>WD14</th><th>実写Tag</th><th>Vision</th><th>ViT</th><th>LFM</th><th>詳細</th>
 </tr></thead>
 <tbody>{rows_html}</tbody>
 </table>

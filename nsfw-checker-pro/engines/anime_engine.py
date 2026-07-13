@@ -54,7 +54,9 @@ class AnimeEngine:
             return {'style': {'anime': 0.0, 'real': 0.0}, 'engine': self.NAME, 'error': 'Not available'}
 
         try:
-            img = cv2.resize(image_array, (384, 384))
+            # モデルはRGB入力を想定 (旧実装はOpenCVのBGRのまま渡していた)
+            img = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (384, 384))
             img = img.astype(np.float32) / 255.0
             mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
             std = np.array([0.229, 0.224, 0.225], dtype=np.float32)

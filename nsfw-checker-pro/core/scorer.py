@@ -38,15 +38,20 @@ class ScoringResult:
     primary_style: str = "着衣"
     # All WD14 tags
     all_tags: str = ""
+    # WD14 content rating (general/sensitive/questionable/explicit)
+    wd14_rating: Dict[str, float] = field(default_factory=dict)
+    # Photo Tagger (idolsankaku, 実写) content rating
+    photo_tagger_rating: Dict[str, float] = field(default_factory=dict)
     # Per-engine raw scores
     engine_scores: Dict[str, float] = field(default_factory=dict)
     # Anime/Real style
     image_style: str = "不明"
     # Vision API SafeSearch
     safe_search: Dict[str, str] = field(default_factory=dict)
-    # ViT NSFW result
+    # ViT NSFW result (4段階: neutral/low/medium/high)
     vit_label: str = ""
     vit_nsfw_score: float = 0.0
+    vit_severity: Dict[str, float] = field(default_factory=dict)
     # LFM2.5-VL result
     lfm_safety_level: str = ""
     lfm_nsfw_score: float = 0.0
@@ -74,18 +79,32 @@ class Scorer:
         """
         result = ScoringResult()
         engine_scores = {}
+        engine_ok = {}  # コンセンサス投票に参加させるか (エンジンが正常動作したか)
 
         # ─── 1. NudeNet Scoring ───
         nudenet_data = analysis_result.get('nudenet', {})
         detections = nudenet_data.get('detections', [])
         nudenet_score = self._score_nudenet(detections, result)
         engine_scores['nudenet'] = nudenet_score
+        engine_ok['nudenet'] = 'error' not in nudenet_data
 
-        # ─── 2. WD14 Tag Analysis ───
+        # ─── 2. WD14 Tag Analysis (+ Content Rating) ───
         wd14_data = analysis_result.get('wd14', {})
         tags = wd14_data.get('tags', {})
-        wd14_score = self._score_wd14(tags, result)
+        rating = wd14_data.get('rating', {})
+        result.wd14_rating = rating
+        wd14_score = self._score_wd14(tags, result, rating)
         engine_scores['wd14'] = wd14_score
+        engine_ok['wd14'] = 'error' not in wd14_data
+
+        # ─── 2b. Photo Tagger (idolsankaku, 実写) Rating Analysis ───
+        photo_data = analysis_result.get('photo_tagger', {})
+        photo_tags = photo_data.get('tags', {})
+        photo_rating = photo_data.get('rating', {})
+        result.photo_tagger_rating = photo_rating
+        photo_score = self._score_photo_tagger(photo_tags, photo_rating, result)
+        engine_scores['photo_tagger'] = photo_score
+        engine_ok['photo_tagger'] = 'error' not in photo_data
 
         # ─── 3. Anime/Real Classification ───
         anime_data = analysis_result.get('anime_cls', {})
@@ -111,18 +130,23 @@ class Scorer:
             vision_score = vision_data.get('score', 0.0)
             result.safe_search = vision_data.get('safe_search', {})
             engine_scores['vision_api'] = vision_score
+            engine_ok['vision_api'] = True
         else:
             engine_scores['vision_api'] = 0
+            engine_ok['vision_api'] = False
 
-        # ─── 5. ViT NSFW Score ───
+        # ─── 5. ViT NSFW Score (4段階重大度) ───
         vit_data = analysis_result.get('vit_nsfw', {})
         if 'error' not in vit_data:
             vit_nsfw = vit_data.get('nsfw_score', 0.0)
             result.vit_label = vit_data.get('label', '')
             result.vit_nsfw_score = vit_nsfw
+            result.vit_severity = vit_data.get('severity', {})
             engine_scores['vit_nsfw'] = vit_nsfw * 100  # Convert to 0-100 scale
+            engine_ok['vit_nsfw'] = True
         else:
             engine_scores['vit_nsfw'] = 0
+            engine_ok['vit_nsfw'] = False
 
         # ─── 6. LFM2.5-VL Score ───
         lfm_data = analysis_result.get('lfm_vl', {})
@@ -132,18 +156,25 @@ class Scorer:
             result.lfm_nsfw_score = lfm_nsfw
             result.lfm_description = lfm_data.get('description', '')
             engine_scores['lfm_vl'] = lfm_nsfw * 100
+            engine_ok['lfm_vl'] = True
         else:
             engine_scores['lfm_vl'] = 0
+            engine_ok['lfm_vl'] = False
 
         # ─── Gender Detection (from NudeNet FACE labels) ───
-        self._detect_gender(detections, tags, result)
+        self._detect_gender(detections, tags, result, extra_tags=photo_tags)
 
         # ─── Consensus Score ───
+        # 正常動作した「リスク評価エンジン」全てを重み付き平均に参加させる。
+        # 旧実装はスコア0のエンジンを除外していたため、安全側の票が反映されず
+        # スコアが上振れするバイアスがあった。anime_cls はスタイル分類のため対象外。
         total_weight = 0.0
         weighted_sum = 0.0
         for eng_name, score in engine_scores.items():
+            if eng_name == 'anime_cls':
+                continue
             weight = ENGINE_WEIGHTS.get(eng_name, 0.0)
-            if weight > 0 and score > 0:
+            if weight > 0 and engine_ok.get(eng_name, False):
                 weighted_sum += score * weight
                 total_weight += weight
 
@@ -162,12 +193,18 @@ class Scorer:
                 result.primary_style = '裸'
                 break
 
-        # WD14 nude tag override
-        for tag_name, tag_score in tags.items():
+        # タガー(WD14 + 実写PhotoTagger)の nude タグ override
+        for tag_name, tag_score in list(tags.items()) + list(photo_tags.items()):
             if tag_name.lower() in ('nipples', 'pussy', 'penis') and tag_score >= 0.90:
                 result.total_score = max(result.total_score, 85.0)
                 result.primary_style = '裸'
                 break
+
+        # レーティング override: WD14 と PhotoTagger どちらかが explicit を高確度で
+        # 示せば格上げする (旧実装はWD14側のみを見ており、実写画像で
+        # PhotoTaggerのみがexplicitを検出したケースを見逃していた)
+        if max(float(rating.get('explicit', 0.0)), float(photo_rating.get('explicit', 0.0))) >= 0.85:
+            result.total_score = max(result.total_score, 85.0)
 
         # ViT override
         if result.vit_nsfw_score >= 0.90:
@@ -224,12 +261,22 @@ class Scorer:
 
         return round(nn_score, 2)
 
-    def _score_wd14(self, tags: Dict[str, float], result: ScoringResult) -> float:
-        """Score WD14 tags and determine primary style."""
+    def _score_wd14(self, tags: Dict[str, float], result: ScoringResult,
+                    rating: Dict[str, float] = None) -> float:
+        """Score WD14 tags + content rating and determine primary style.
+
+        レーティングヘッド (general/sensitive/questionable/explicit) はWD14の
+        最重要NSFW指標。タグベースのスコアと組み合わせて最大値を採用する。
+        """
+        rating = rating or {}
+        rating_score = max(
+            float(rating.get('explicit', 0.0)) * 100.0,
+            float(rating.get('questionable', 0.0)) * 60.0,
+        )
         if not tags:
             result.primary_style = '着衣'
             result.all_tags = ''
-            return 0.0
+            return round(rating_score, 2)
 
         top_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)[:15]
         result.all_tags = ', '.join(f"{t}({s:.0%})" for t, s in top_tags)
@@ -249,17 +296,40 @@ class Scorer:
         else:
             result.primary_style = '着衣'
 
-        # WD14 risk score based on nude/explicit tags
+        # WD14 risk score: nude/explicitタグ と レーティングヘッド の最大値
         nude_tags = STYLE_TAG_MAP.get('裸', [])
         max_nude = 0.0
         for tag, score in tags.items():
             if tag.lower() in [t.lower() for t in nude_tags]:
                 max_nude = max(max_nude, score)
 
-        return round(max_nude * 100, 2)
+        return round(max(max_nude * 100, rating_score), 2)
 
-    def _detect_gender(self, detections: List[dict], tags: Dict[str, float], result: ScoringResult):
-        """Detect gender from NudeNet face labels and WD14 tags."""
+    def _score_photo_tagger(self, tags: Dict[str, float], rating: Dict[str, float],
+                            result: ScoringResult) -> float:
+        """Score the real-photo tagger (idolsankaku) rating + nude-tag overlap.
+
+        primary_style/all_tags は WD14 (アニメタガー) 側が担うため、ここでは
+        上書きしない。レーティングヘッドと裸タグの重なりのみでrisk scoreを返す。
+        """
+        rating_score = max(
+            float(rating.get('explicit', 0.0)) * 100.0,
+            float(rating.get('questionable', 0.0)) * 60.0,
+        )
+        if not tags:
+            return round(rating_score, 2)
+
+        nude_tags = STYLE_TAG_MAP.get('裸', [])
+        max_nude = 0.0
+        for tag, score in tags.items():
+            if tag.lower() in [t.lower() for t in nude_tags]:
+                max_nude = max(max_nude, score)
+
+        return round(max(max_nude * 100, rating_score), 2)
+
+    def _detect_gender(self, detections: List[dict], tags: Dict[str, float], result: ScoringResult,
+                       extra_tags: Dict[str, float] = None):
+        """Detect gender from NudeNet face labels and tagger (WD14 + photo_tagger) tags."""
         for det in detections:
             if det.get('label') == 'FACE_FEMALE' and det.get('score', 0) > 0.5:
                 result.gender = '女性'
@@ -268,9 +338,12 @@ class Scorer:
                 result.gender = '男性'
                 return
 
-        # Fallback to WD14 tags
+        # Fallback to tagger tags (WD14 + 実写タガーを加点合算)
         girl_score = tags.get('1girl', 0) + tags.get('female focus', 0)
         boy_score = tags.get('1boy', 0) + tags.get('male focus', 0)
+        if extra_tags:
+            girl_score += extra_tags.get('1girl', 0) + extra_tags.get('female focus', 0)
+            boy_score += extra_tags.get('1boy', 0) + extra_tags.get('male focus', 0)
         if girl_score > boy_score and girl_score > 0.3:
             result.gender = '女性'
         elif boy_score > girl_score and boy_score > 0.3:

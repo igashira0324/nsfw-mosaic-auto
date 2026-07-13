@@ -7,10 +7,21 @@ nsfw-checker-pro - Configuration
 # ============================================================
 # Model URLs
 # ============================================================
-NUDENET_MODEL_URL = "https://github.com/notAI-tech/NudeNet/releases/download/v3.0/640m.onnx"
+# 注: NudeNet 640m はGitHubの直接URLがログイン要求されるため、
+# プロジェクトルートの download_models.bat (API経由) で取得する。
+# エンジンは ../models/nudenet_640m.onnx を自動検出し、無ければ同梱320nを使う。
 ANIME_MODEL_URL = "https://huggingface.co/deepghs/anime_real_cls/resolve/main/mobilenetv3_v1.4_dist/model.onnx?download=true"
 WD14_TAGGER_URL = "https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/model.onnx?download=true"
 WD14_TAGS_URL = "https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/selected_tags.csv?download=true"
+
+# 実写(グラビア/アイドル系)タガー。WD14 v3系と同一の前処理・カテゴリ体系
+# (SmilingWolf作、deepghs org掲載) — アニメ調に偏るWD14の弱点である実写画像を補完する。
+# https://huggingface.co/deepghs/idolsankaku-eva02-large-tagger-v1
+PHOTO_TAGGER_URL = "https://huggingface.co/deepghs/idolsankaku-eva02-large-tagger-v1/resolve/main/model.onnx?download=true"
+PHOTO_TAGGER_TAGS_URL = "https://huggingface.co/deepghs/idolsankaku-eva02-large-tagger-v1/resolve/main/selected_tags.csv?download=true"
+
+# WD14 レーティングの寄与係数 (スコア = max(explicit*100, questionable*60, 裸タグ*100))
+WD14_RATING_QUESTIONABLE_WEIGHT = 0.60
 
 # ============================================================
 # Google Cloud Vision API
@@ -105,6 +116,7 @@ STYLE_TAG_MAP = {
 ENGINE_WEIGHTS = {
     'nudenet': 0.25,
     'wd14': 0.20,
+    'photo_tagger': 0.15,
     'vision_api': 0.15,
     'vit_nsfw': 0.10,
     'lfm_vl': 0.25,

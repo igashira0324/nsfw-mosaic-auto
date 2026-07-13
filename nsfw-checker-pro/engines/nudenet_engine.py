@@ -42,7 +42,11 @@ def _add_cuda_to_path():
                 pass
 
 class NudeNetEngine:
-    """NudeNet v3 検出エンジン (Custom ONNX Implementation)"""
+    """NudeNet v3 検出エンジン (Custom ONNX Implementation)
+
+    優先順: 640m 高精度モデル (../models/nudenet_640m.onnx, 640px) →
+            同梱 320n (320px)。640m はプロジェクトルートの download_models.bat で取得。
+    """
 
     NAME = "nudenet"
     DISPLAY_NAME = "NudeNet v3"
@@ -50,14 +54,34 @@ class NudeNetEngine:
     def __init__(self):
         self.session = None
         self.available = False
+        self.input_res = 320
         _add_cuda_to_path()
-        
-        # Try to find the default model from the installed package
-        self.model_path = self._find_package_model()
-        if not self.model_path:
-            self.model_path = Path.home() / ".gemini" / "models" / "320n.onnx"
+
+        # 1) 高精度 640m (プロジェクトルート models/)
+        self.model_path = self._find_640m_model()
+        if self.model_path:
+            self.input_res = 640
+            self.DISPLAY_NAME = "NudeNet v3 (640m)"
+        else:
+            # 2) パッケージ同梱 320n
+            self.model_path = self._find_package_model()
+            if not self.model_path:
+                self.model_path = Path.home() / ".gemini" / "models" / "320n.onnx"
 
         self._init_session()
+
+    def _find_640m_model(self) -> Optional[Path]:
+        candidates = [
+            Path(__file__).parent.parent.parent / "models" / "nudenet_640m.onnx",
+            Path.home() / ".gemini" / "models" / "640m.onnx",
+        ]
+        for p in candidates:
+            try:
+                if p.exists() and p.stat().st_size > 50_000_000:
+                    return p
+            except OSError:
+                continue
+        return None
 
     def _find_package_model(self) -> Optional[Path]:
         try:
@@ -118,8 +142,8 @@ class NudeNetEngine:
             if image_array is None:
                 return {'detections': [], 'engine': self.NAME}
 
-            # NudeNet v3 (320n) expects 320x320
-            target_res = 320
+            # 320n: 320x320 / 640m: 640x640
+            target_res = self.input_res
             blob, original_max_size = self._preprocess(image_array, target_res)
             
             # Inference
